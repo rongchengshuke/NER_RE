@@ -41,7 +41,7 @@ def dataset_jsonl_transfer(origin_path, new_path):
                 entity_sentence = "没有找到任何实体"
 
             message = {
-                "instruction": """你是一个文本实体识别领域的专家，你需要从给定的句子中提取 地点; 人名; 地理实体; 组织 实体. 以 json 格式输出, 如 {"entity_text": "南京", "entity_label": "地理实体"} 注意: 1. 输出的每一行都必须是正确的 json 字符串. 2. 找不到任何实体时, 输出"没有找到任何实体". """,
+                "instruction": """你是一个文本实体识别领域的专家，你需要从给定的句子中提取 地点; 人名; 地理实体; 组织 实体. 以 json 格式输出, 如 {"entity_text": "南京(12,34)", "entity_label": "地理实体"} 注意: 1. 输出的每一行都必须是正确的 json 字符串. 2. 找不到任何实体时, 输出"没有找到任何实体". 3.如果地理实体有坐标需要输出地理实体的坐标，没有坐标则输出地理实体. """,
                 "input": f"文本:{input_text}",
                 "output": entity_sentence,
             }
@@ -61,7 +61,7 @@ def process_func(example):
 
     MAX_LENGTH = 384
     input_ids, attention_mask, labels = [], [], []
-    system_prompt = """你是一个文本实体识别领域的专家，你需要从给定的句子中提取 地点; 人名; 地理实体; 组织 实体. 以 json 格式输出, 如 {"entity_text": "南京", "entity_label": "地理实体"} 注意: 1. 输出的每一行都必须是正确的 json 字符串. 2. 找不到任何实体时, 输出"没有找到任何实体"."""
+    system_prompt = """你是一个文本实体识别领域的专家，你需要从给定的句子中提取 地点; 人名; 地理实体; 组织 实体. 以 json 格式输出, 如 {"entity_text": "南京(12,34)", "entity_label": "地理实体"} 注意: 1. 输出的每一行都必须是正确的 json 字符串. 2. 找不到任何实体时, 输出"没有找到任何实体". 3.如果地理实体有坐标需要输出地理实体的坐标，没有坐标则输出地理实体. """
 
     instruction = tokenizer(
         f"<|im_start|>system\n{system_prompt}<|im_end|>\n<|im_start|>user\n{example['input']}<|im_end|>\n<|im_start|>assistant\n",
@@ -104,11 +104,15 @@ def predict(messages, model, tokenizer):
     return response
 
 
-model_id = "./models/Qwen2-1.5B/Qwen2-1.5B-Instruct"
-model_dir = "./models/Qwen2-1.5B/Qwen2-1.5B-Instruct"
+# model_id = "./models/Qwen2-1.5B/Qwen2-1.5B-Instruct"
+# model_dir = "./models/Qwen2-1.5B/Qwen2-1.5B-Instruct"
+
+model_id = "./models/Qwen2-1.5B"
+model_dir = "./models/Qwen2-1.5B"
+
 
 # 在modelscope上下载Qwen模型到本地目录下
-model_dir = snapshot_download(model_id, cache_dir="./", revision="master")
+# model_dir = snapshot_download(model_id, cache_dir="./", revision="master")
 
 # Transformers加载模型权重
 tokenizer = AutoTokenizer.from_pretrained(model_dir, use_fast=False, trust_remote_code=True)
@@ -116,8 +120,8 @@ model = AutoModelForCausalLM.from_pretrained(model_dir, device_map="auto", torch
 model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
 
 # 加载、处理数据集和测试集
-train_dataset_path = "./data/ccfbdci.jsonl"
-train_jsonl_new_path = "./data/ccf_train.jsonl"
+train_dataset_path = "./data/ccfbdci_NS.jsonl"
+train_jsonl_new_path = "./data/ccf_train_NS.jsonl"
 
 if not os.path.exists(train_jsonl_new_path):
     dataset_jsonl_transfer(train_dataset_path, train_jsonl_new_path)
