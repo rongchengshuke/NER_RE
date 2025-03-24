@@ -5,32 +5,43 @@ import random
 import json
 import re
 import os
+import requests
 
 # API密钥
-API_KEY = "sk-xxxx"
+API_KEY = "sk-Vqaxxxx"
 
 
 # 自定义硅基流动大模型类
 class CustomLLM_Siliconflow:
     def __call__(self, prompt: str) -> str:
-        client = OpenAI(api_key=API_KEY, base_url="http://18.191.125.135:3000/v1/")
-        response = client.chat.completions.create(
-            model='deepseek-r1',
-            messages=[{'role': 'user', 'content': prompt}],
-        )
+        headers = {
+            'Authorization': f'Bearer {API_KEY}',
+            'Content-Type': 'application/json',
+        }
+        base_url = "http://18.191.125.135:3000/v1"
+        payload = {
+            "model": "deepseek-r1",
+            "messages": [{"role": "user", "content": prompt}, ]
+        }
+        response = requests.post(f'{base_url}/chat/completions', headers=headers, json=payload)
+
+        # 将响应内容转换为JSON格式
+        response_json = response.json()
 
         content = ""
-        if hasattr(response, 'choices') and response.choices:
-            for choice in response.choices:
-                if hasattr(choice, 'message') and hasattr(choice.message, 'content'):
-                    content += choice.message.content
+        if 'choices' in response_json and response_json['choices']:
+            for choice in response_json['choices']:
+                if 'message' in choice and 'content' in choice['message']:
+                    content += choice['message']['content']
         else:
             raise ValueError("Unexpected response structure")
         return content
 
+
 def convert_output_to_single_line(data):
     data["output"] = json.dumps(data["output"], ensure_ascii=False)  # 保持中文
     return data
+
 
 def extract_and_parse_json(text):
     """
@@ -51,6 +62,7 @@ def extract_and_parse_json(text):
     else:
         print("未找到有效的 JSON 数据")
         return None
+
 
 def save_json_list(json_list, filename):
     """
@@ -114,7 +126,7 @@ if __name__ == '__main__':
     llm = CustomLLM_Siliconflow()
     template = '''
     【任务描述】
-    根据所提供的军事类关键词生成一段1000-3000汉字字的战争类报道，文本中必须包含20-50个地理位置且对于一些地理位置给予坐标，
+    你现在正在战场上经历炮火的战争，你身为后方指挥接到前线的战时电报，你需要把这段电报转述出来。根据所提供的军事类关键词生成一段1000-3000汉字字的时事战地通讯电报，文本中必须包含20-50个地理位置且对于一些地理位置给予坐标，
     文本中还要包含一些组织名称，人名。并且抽取出上面所提到的三种类型的实体，以及他们之间存在的明确的关系。
 
     【输入内容】
@@ -125,7 +137,7 @@ if __name__ == '__main__':
     地理位置和组织之间的关系: {location_org_relation}
 
     【要求】
-    - 生成文本的语气要符合像记者记录时事一样，不要额外渲染文字，确保输出语句通顺，符合语法逻辑。
+    - 生成文本的语气要准确且紧急，不要额外渲染文字，确保输出语句通顺，符合语法逻辑。
     - 所提供的关键词如果在{mili_list}列表中要抽取出军事装备实体类型，如果在{org_list}列表中要抽取出组织名称实体类型，不在这两个列表中可以适当舍弃，不作为实体被抽取出来。
     - 实体类型只有以下四种：军事装备，地理位置，组织名称，人名。关系类型根据所提供的关系字段进行选择。
     - 文本中生成的地理坐标的格式必须如下，南京(23,46)，其中(23,46)为南京的坐标；抽取的地理实体如果有坐标必须连同坐标一块抽取。
@@ -133,22 +145,24 @@ if __name__ == '__main__':
     - output的标准输出格式为{{"entities": [{{"name": "南京(23,46)","type": "地理位置"}},{{...}}],"relations": [{{"subject": "315连","relation": "指挥下","object": "第5团"}},{{...}}]}}。
     '''
 
-    csv_file = "军标库.csv"
+    csv_file = "data/军标库.csv"
     words_list = read_csv_first_column(csv_file)
 
     json_data_list = []  # 存储所有解析的 JSON 数据
 
-    mili_list = read_txt_to_list("武器装备类.txt")
-    org_list = read_txt_to_list("组织架构类.txt")
+    mili_list = read_txt_to_list("data/武器装备类.txt")
+    org_list = read_txt_to_list("data/组织架构类.txt")
 
     index = 0
-    for _ in range(8):  # 进行 5 次循环
+    while len(words_list) > 0:  # 当列表中还有未使用的关键词时继续循环
         index += 1
-        if index > 15:
+        if index > 150:  # 控制循环次数，防止无限循环
             break
-        random.shuffle(words_list)  # 重新打乱关键词列表
-        num_keywords = random.randint(9, 13)
-        selected_keywords = random.sample(words_list, min(num_keywords, len(words_list)))
+
+        # 确保选取的关键词数量不超过剩余关键词的数量
+        num_keywords = random.randint(9, 13) if len(words_list) >= 9 else len(words_list)
+        selected_keywords = words_list[:num_keywords]  # 取出前num_keywords个关键词
+        words_list = words_list[num_keywords:]  # 移除已使用的关键词
 
         prompt_template = ChatPromptTemplate.from_template(template)
         prompt = prompt_template.format(
@@ -170,7 +184,10 @@ if __name__ == '__main__':
         else:
             print("警告：某次生成的 JSON 解析失败，已跳过！")
 
-    # 统一存入 JSON 文件
-    save_json_list(json_data_list, "test_data/json_test_1.json")
-    print(f"所有数据已保存到 test_data/json_test_1.json，总共 {len(json_data_list)} 条数据。")
+        if len(words_list) == 0:  # 如果当前列表已经用完，则重新加载并打乱列表
+            words_list = read_csv_first_column(csv_file)
+            random.shuffle(words_list)
 
+    # 统一存入 JSON 文件
+    save_json_list(json_data_list, "test_data/json_test_8.json")
+    print(f"所有数据已保存到 test_data/json_test_8.json，总共 {len(json_data_list)} 条数据。")
